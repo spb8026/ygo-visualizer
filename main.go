@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/shawn/ygo-visualizer/bridge"
+	"github.com/spb8026/ygo-visualizer/bridge"
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "starting...")
 	major, minor := bridge.GetVersion()
-	fmt.Fprintf(os.Stderr, "OCG Core version: %d.%d\n", major, minor)
+	fmt.Printf("OCG Core version: %d.%d\n", major, minor)
+
+	duel, err := bridge.CreateDuel()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create duel: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Duel created successfully: %p\n", duel)
 }

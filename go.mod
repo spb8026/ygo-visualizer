@@ -1,3 +1,3 @@
-module github.com/shawn/ygo-visualizer
+module github.com/spb8026/ygo-visualizer
 
 go 1.25.6
