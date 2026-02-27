@@ -1,3 +1,14 @@
-*.dll
-*.dll.a
+# Build outputs
+bin/ygo-visualizer.exe
 *.exe
+
+# System/Generated 
+.DS_Store
+Thumbs.db
+
+# Keep the import libraries for linking, ignore the heavy DLLs if you prefer 
+# (though you said you wanted to keep them for "it just works" setup)
+# !bridge/lib/*.a
+# !bin/*.dll
+
+bridge/include/*
