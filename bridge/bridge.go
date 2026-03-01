@@ -371,3 +371,63 @@ func (d *Duel) SendIdleCardAction(action answerpb.Answer_SelectIdle_Action, inde
 
 	return nil
 }
+
+func (d *Duel) SendIdlePhase(phase uint32) error {
+	ans := &answerpb.Answer{
+		T: &answerpb.Answer_SelectIdle_{
+			SelectIdle: &answerpb.Answer_SelectIdle{
+				T: &answerpb.Answer_SelectIdle_Phase{
+					Phase: phase,
+				},
+			},
+		},
+	}
+
+	b, err := proto.Marshal(ans)
+	if err != nil {
+		return err
+	}
+	if len(b) == 0 {
+		return nil
+	}
+
+	rc := C.ygo_duel_apply_answer(
+		d.h,
+		(*C.uint8_t)(unsafe.Pointer(&b[0])),
+		C.uint32_t(len(b)),
+	)
+	if rc != 0 {
+		return fmt.Errorf("ygo_duel_apply_answer failed: %d", int(rc))
+	}
+	return nil
+}
+
+func (d *Duel) SendSelectToChainNoOp() error {
+	ans := &answerpb.Answer{
+		T: &answerpb.Answer_SelectToChain_{
+			SelectToChain: &answerpb.Answer_SelectToChain{
+				T: &answerpb.Answer_SelectToChain_NoOp{
+					NoOp: true,
+				},
+			},
+		},
+	}
+
+	b, err := proto.Marshal(ans)
+	if err != nil {
+		return err
+	}
+	if len(b) == 0 {
+		return nil
+	}
+
+	rc := C.ygo_duel_apply_answer(
+		d.h,
+		(*C.uint8_t)(unsafe.Pointer(&b[0])),
+		C.uint32_t(len(b)),
+	)
+	if rc != 0 {
+		return fmt.Errorf("ygo_duel_apply_answer failed: %d", int(rc))
+	}
+	return nil
+}

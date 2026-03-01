@@ -19,6 +19,7 @@
 // YGOpen includes
 #include <google/protobuf/arena.h>
 #include "ygopen/codec/edo9300_ocgcore_encode.hpp"
+#include "ygopen/codec/edo9300_ocgcore_decode.hpp"
 #include "duel_msg.pb.h"
 #include "duel_answer.pb.h"
 
@@ -44,7 +45,7 @@ namespace
         std::vector<std::string> encoded_msgs{}; // serialized Msg buffers
         std::size_t next_msg_index{0};
 
-        // IEncodeContext implementation – currently minimal/stubbed where possible.
+        YGOpen::Proto::Duel::Msg_Request last_request{};
 
         [[nodiscard]] auto pile_size(Con, Loc) const noexcept -> std::size_t override
         {
@@ -198,33 +199,58 @@ int ygo_duel_step(YGO_DuelHandle handle)
 {
     auto *ctx = ctx_from_handle(handle);
     if (!ctx || !ctx->duel)
-    {
         return -1;
-    }
 
     ctx->encoded_msgs.clear();
     ctx->next_msg_index = 0;
 
     auto status = OCG_DuelProcess(ctx->duel);
 
-    if (status == OCG_DUEL_STATUS_AWAITING)
+    if (status == OCG_DUEL_STATUS_AWAITING || status == OCG_DUEL_STATUS_END)
     {
-        // Fetch raw core messages and encode them to YGOpen protos.
         uint32_t length = 0;
         void *raw = OCG_DuelGetMessage(ctx->duel, &length);
         if (raw && length > 0)
         {
-            auto *data = static_cast<uint8_t *>(raw);
+            auto *ptr = static_cast<uint8_t *>(raw);
+            auto *end = ptr + length;
 
-            // TODO: Use YGOpen::Codec::Edo9300::OCGCore::encode_one here
-            // in a loop to turn raw core messages into Msg objects and
-            // serialize them into ctx->encoded_msgs.
-            //
-            // For now, we do not attempt to parse the raw bytes; the
-            // bridge will report AWAITING but ygo_duel_next_msg will
-            // return 0 (no messages). This is enough to get the bridge
-            // compiling so we can iterate on the encoding next.
-            (void)data;
+            while (ptr < end)
+            {
+                // Read 4-byte little-endian message length prefix
+                if (ptr + 4 > end) break;
+                uint32_t msg_len = static_cast<uint32_t>(ptr[0])
+                                 | static_cast<uint32_t>(ptr[1]) << 8
+                                 | static_cast<uint32_t>(ptr[2]) << 16
+                                 | static_cast<uint32_t>(ptr[3]) << 24;
+                ptr += 4;
+
+                if (ptr + msg_len > end) break;
+                auto *msg_start = ptr;
+
+                auto result = YGOpen::Codec::Edo9300::OCGCore::encode_one(
+                    ctx->arena, *ctx, msg_start);
+
+                switch (result.state)
+                {
+                case YGOpen::Codec::EncodeOneResult::State::OK:
+{
+    std::string serialized;
+    if (result.msg->SerializeToString(&serialized))
+        ctx->encoded_msgs.push_back(std::move(serialized));
+    // Store the request if this message has one
+    if (result.msg->has_request())
+        ctx->last_request = result.msg->request();
+    break;
+}
+                case YGOpen::Codec::EncodeOneResult::State::SWALLOWED:
+                    break;
+                case YGOpen::Codec::EncodeOneResult::State::UNKNOWN:
+                    break;
+                }
+
+                ptr = msg_start + msg_len;
+            }
         }
     }
 
@@ -258,31 +284,24 @@ int ygo_duel_next_msg(YGO_DuelHandle handle, YGO_Buffer *out_buf)
 }
 
 int ygo_duel_apply_answer(YGO_DuelHandle handle,
-                          const uint8_t *data,
+                          const uint8_t* data,
                           uint32_t len)
 {
     auto *ctx = ctx_from_handle(handle);
     if (!ctx || !ctx->duel || !data || len == 0U)
-    {
         return -1;
-    }
 
-    // Decode the Answer protobuf.
     Answer answer;
     if (!answer.ParseFromArray(data, static_cast<int>(len)))
-    {
         return -2;
-    }
 
-    // TODO: Inspect answer.t() oneof and translate to the raw response
-    // format expected by ygopro-core. For now this is a stub that does
-    // nothing but report success so that higher layers can be wired.
-    //
-    // Example for SelectIdle (IDLECMD) will eventually:
-    //  - Read answer.select_idle().card_action().action()/index()
-    //  - Pack them into a 4-byte value as in existing Go code
-    //  - Call OCG_DuelSetResponse(ctx->duel, buffer, 4)
+    std::vector<uint8_t> raw;
+    YGOpen::Codec::Edo9300::OCGCore::decode_one_answer(
+        ctx->last_request, answer, raw);
 
-    (void)answer;
+    if (raw.empty())
+        return -3;
+
+    OCG_DuelSetResponse(ctx->duel, raw.data(), static_cast<uint32_t>(raw.size()));
     return 0;
 }

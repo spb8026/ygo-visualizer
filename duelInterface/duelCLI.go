@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spb8026/ygo-visualizer/bridge"
+	duelpb "github.com/spb8026/ygo-visualizer/ygopenpb"
+	"google.golang.org/protobuf/proto"
 )
 
 func RunCLI() {
@@ -27,7 +29,39 @@ func RunCLI() {
 	}
 
 	duel.Start()
+	for {
+		status, msgs, err := duel.Step()
+		fmt.Printf("Status: %d, Messages: %d, Error: %v\n", status, len(msgs), err)
 
-	status, msgs, err := duel.Step()
-	fmt.Printf("Status: %d, Messages: %d, Error: %v\n", status, len(msgs), err)
+		for _, b := range msgs {
+			var m duelpb.Msg
+			if err := proto.Unmarshal(b, &m); err != nil {
+				fmt.Printf("  decode error: %v\n", err)
+				continue
+			}
+			fmt.Printf("  Msg: %s\n", m.String())
+			if sel := m.GetRequest().GetSelectIdle(); sel != nil {
+				err := duel.SendIdlePhase(sel.GetAvailablePhase())
+				if err != nil {
+					fmt.Printf("  answer error: %v\n", err)
+				} else {
+					fmt.Printf("  sent phase answer: %d\n", sel.GetAvailablePhase())
+				}
+			}
+			if m.GetRequest().GetSelectToChain() != nil {
+				err := duel.SendSelectToChainNoOp()
+				if err != nil {
+					fmt.Printf("  answer error: %v\n", err)
+				} else {
+					fmt.Printf("  sent no-op chain answer\n")
+				}
+			}
+		}
+
+		var input string
+		fmt.Scanln(&input)
+		if input == "q" {
+			break
+		}
+	}
 }
